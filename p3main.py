@@ -9,10 +9,9 @@ from platform import release
 from random import randint
 import sys
 from threading import Thread, Lock
+import threading
 from token import LESSEQUAL
 from turtle import setup  # standard Python threading library
-
-# (Comments are just suggestions. Feel free to modify or delete them.)
 
 # When you start a thread with a call to "threading.Thread", you will
 # need to pass in the name of the function whose code should run in
@@ -42,6 +41,7 @@ g_Available,g_Current,g_Requests,g_Max,g_Total,g_potential=0,0,0,0,0,0
 g_num_resources = 0
 g_num_processes = 0
 mutex = Lock()
+print_lock = Lock()
 # Let's write a main method at the top
 def main():
     global g_Available,g_Current,g_Requests,g_Max,g_Total, g_num_resources, g_num_processes,g_potential
@@ -162,7 +162,7 @@ def bankers(t_available,t_current):
             if not blocked:
                 for r in range(g_num_resources):
                     t_available[r] += t_current[p][r]
-                print(f"Available p{p}: {t_available}")
+                #print(f"Available p{p}: {t_available}")
                 safe.append(p)
                 bad_block=False
         if bad_block:
@@ -188,7 +188,11 @@ def manual():
                 I = int(c_parts[1])
                 J = int(c_parts[3])
                 K = int(c_parts[5])
-                if I not in range(0,g_Max[K][J]+1) or J not in range(0,g_num_resources) or K not in range(0,g_num_processes):
+                if I not in range(0,g_Max[K][J]+1):
+                    print("Invalid Request") 
+                elif J not in range(0,g_num_resources):
+                    print("Invalid Request") 
+                elif K not in range(0,g_num_processes):
                     print("Invalid Request") 
                 else:
                     if request(I,J,K):
@@ -206,8 +210,8 @@ def manual():
                         print(c)
             case "release":
                 I = int(c_parts[1])
-                J = int(c_parts[3])-1
-                K = int(c_parts[5])-1
+                J = int(c_parts[3])
+                K = int(c_parts[5])
                 if I not in range(0,g_Current[K][J]+1) or J not in range(0,g_num_resources) or K not in range(0,g_num_processes):
                     print("Invalid Request")
                 else:
@@ -226,45 +230,91 @@ def manual():
                         print(c)
                  
 def request(num,resource,process):
-    global g_Available,g_Current,g_Requests,g_Max,g_Total, g_num_resources, g_num_processes,g_potential
-    t_requests=two_d_copy(g_Requests)
-    t_requests[process][resource]=num
-    for p, proc in enumerate(t_requests):
-        for r,reso in enumerate(proc):
-            if t_requests[p][r] > g_Max[p][r]-g_Current[p][r]:
-                return False
-            if t_requests[p][r] > g_Available[r]:
-                return False
+    global g_Available,g_Current,g_Requests,g_Max,g_Total, g_num_resources, g_num_processes,g_potential,mutex
+    mutex.acquire()
+    # t_requests=two_d_copy(g_Requests)
+    # t_requests[process][resource]=num
+    
+    if num > g_Max[process][resource]-g_Current[process][resource]:
+        mutex.release()
+        return False
+    if num > g_Available[resource]:
+        mutex.release()
+        return False
+
+    # for p, proc in enumerate(t_requests):
+    #     for r,reso in enumerate(proc):
+    #         if t_requests[p][r] > g_Max[p][r]-g_Current[p][r]:
+    #             mutex.release()
+    #             return False
+    #         if t_requests[p][r] > g_Available[r]:
+    #             mutex.release()
+    #             return False
     t_Available = one_d_copy(g_Available)
     t_Current = two_d_copy(g_Current)
     t_Available[resource]-=num
     t_Current[process][resource]+=num
+    
     if bankers(t_Available,t_Current):
         g_Available[resource]-=num
         g_Current[process][resource]+=num
+        mutex.release()
         return True
+    mutex.release()
     return False
 
 def release_resource(num,resource,process):
     global g_Available,g_Current,g_Requests,g_Max,g_Total, g_num_resources, g_num_processes
-    g_Available[resource]+=num
-    g_Current[process][resource]-=num
-    return True
+    mutex.acquire()
+    if num is not range(0,g_Current[process][resource]+1):
+        g_Available[resource]+=num
+        g_Current[process][resource]-=num
+        mutex.release()
+        return True
+    mutex.release()
+    return False
 
 def auto():
-    n = input("Num Customers: ")
-    for n in range(0,n):
-        my_thread(target=create_thread_requests, args=(n))
-    return
+    global mutex
+    num_customers = int(input("Num Customers: "))
+    threads = []
+    n=0
+    while n < num_customers:
+        thread = my_thread(target=create_thread_requests, args=(n,))
+        threads.append(thread)
+        thread.start()
+        n+=1
+    for thread in threads:
+        thread.join()
 
 def create_thread_requests(thread_name):
     global g_Available,g_Current,g_Requests,g_Max,g_Total, g_num_resources, g_num_processes,g_potential
     #I = num Resources
     #J = Resource
     #K = process
-    I = randint(0,max(g_Total))
-    J = randint(0,g_num_resources-1)
-    K = randint(0,g_num_processes-1)
+    
+    for _ in range(3):
+        
+        J = randint(0,g_num_resources-1)
+        K = randint(0,g_num_processes-1)
+        I = randint(1,g_Max[K][J])
+        #print(f"\nt{thread_name}: Process {K} requesting {I} units of resource {J}")
+        if request(I,J,K):
+            print(f"\nt{thread_name}: Process {K} request of {I} units of resource {J}: Granted")
+            continue
+        else: print(f"\nt{thread_name}: Process {K} request of {I} units of resource {J}: Denied")
+        
+        
+        
+        J = randint(0,g_num_resources-1)
+        K = randint(0,g_num_processes-1)
+        I = randint(1,g_Current[K][J]+1)
+        #print(f"\nt{thread_name}: Process {K} Releasing {I} units of resource {J}")
+        if release_resource(I,J,K):
+            print(f"\nt{thread_name}: Process {K} release of {I} units of resource {J}: Granted")
+            continue
+        else: print(f"\nt{thread_name}: Process {K} release of {I} units of resource {J}: Denied")
+    
 def one_d_copy(array):
     new_array=[]
     for i in array:
