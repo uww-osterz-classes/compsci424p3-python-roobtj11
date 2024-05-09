@@ -266,7 +266,7 @@ def request(num,resource,process):
 def release_resource(num,resource,process):
     global g_Available,g_Current,g_Requests,g_Max,g_Total, g_num_resources, g_num_processes
     mutex.acquire()
-    if num is not range(0,g_Current[process][resource]+1):
+    if num is not range(1,g_Current[process][resource]+1):
         g_Available[resource]+=num
         g_Current[process][resource]-=num
         mutex.release()
@@ -275,11 +275,10 @@ def release_resource(num,resource,process):
     return False
 
 def auto():
-    global mutex
-    num_customers = int(input("Num Customers: "))
+    global mutex, g_num_processes
     threads = []
     n=0
-    while n < num_customers:
+    while n < g_num_processes:
         thread = my_thread(target=create_thread_requests, args=(n,))
         threads.append(thread)
         thread.start()
@@ -292,12 +291,16 @@ def create_thread_requests(thread_name):
     #I = num Resources
     #J = Resource
     #K = process
-    
+    K = thread_name
     for _ in range(3):
+        I=0
+        while I ==0:
+            J = randint(0,g_num_resources-1)
+            try:
+                I = randint(1,min(g_Max[K][J],g_Available[J]))
+            except :
+                I=min(g_Max[K][J],g_Available[J])
         
-        J = randint(0,g_num_resources-1)
-        K = randint(0,g_num_processes-1)
-        I = randint(1,g_Max[K][J])
         #print(f"\nt{thread_name}: Process {K} requesting {I} units of resource {J}")
         if request(I,J,K):
             print(f"\nt{thread_name}: Process {K} request of {I} units of resource {J}: Granted")
@@ -307,8 +310,11 @@ def create_thread_requests(thread_name):
         
         
         J = randint(0,g_num_resources-1)
-        K = randint(0,g_num_processes-1)
-        I = randint(1,g_Current[K][J]+1)
+        try:
+            I = randint(1,g_Current[K][J]+1)
+        except :
+            I = g_Current[K][J]
+        
         #print(f"\nt{thread_name}: Process {K} Releasing {I} units of resource {J}")
         if release_resource(I,J,K):
             print(f"\nt{thread_name}: Process {K} release of {I} units of resource {J}: Granted")
